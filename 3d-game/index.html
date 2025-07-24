@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Collector 3D</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: white;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #gameCanvas {
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+        }
+        #score {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 20;
+            backdrop-filter: blur(10px);
+            border: 2px solid #00eeff;
+        }
+        #restartBtn, #saveScoreBtn {
+            background: #00eeff;
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 25px;
+            font-size: 18px;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        #restartBtn:hover, #saveScoreBtn:hover {
+            background: #00aabb;
+            transform: scale(1.05);
+        }
+        #title {
+            font-size: 36px;
+            text-align: center;
+            margin-bottom: 20px;
+            color: #00eeff;
+            text-shadow: 0 0 10px rgba(0, 238, 255, 0.7);
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+            font-size: 14px;
+        }
+        #highScores {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+            width: 200px;
+        }
+        #highScores h3 {
+            margin-top: 0;
+            color: #00eeff;
+            text-align: center;
+        }
+        #scoresList {
+            list-style-type: none;
+            padding: 0;
+        }
+        #scoresList li {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        #playerNameInput {
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            margin-right: 10px;
+            width: 150px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui">
+            <div id="score">Score: 0</div>
+            <div id="lives">Lives: 3</div>
+        </div>
+        
+        <div id="highScores">
+            <h3>High Scores</h3>
+            <ul id="scoresList"></ul>
+        </div>
+        
+        <div id="gameOver">
+            <h2 id="title">Game Over</h2>
+            <p>Your final score: <span id="finalScore">0</span></p>
+            <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20">
+            <button id="saveScoreBtn">Save Score</button>
+            <button id="restartBtn">Play Again</button>
+        </div>
+        
+        <div id="instructions">
+            <p>Use Arrow Keys or WASD to move | Collect stars | Avoid red obstacles</p>
+        </div>
+    </div>
+
+    <!-- Include Three.js, Cannon.js, and Supabase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script>
+        // Game variables
+        let scene, camera, renderer, world;
+        let ship, stars = [], obstacles = [];
+        let score = 0;
+        let lives = 3;
+        let gameActive = true;
+        let clock = new THREE.Clock();
+        let supabaseClient; // Will be initialized after Supabase SDK loads
+        
+        // Ship movement variables
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        
+        // Supabase configuration from environment variables
+        const supabaseUrl = 'https://iwtoypaechijaqwxdsak.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3dG95cGFlY2hpamFxd3hkc2FrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzODkxMTEsImV4cCI6MjA2ODk2NTExMX0.emiR60ThGr3u0qItOcNnn5rc_Fgnpy-pJQD8KDnXV6U';
+        
+        // Initialize Supabase client
+        function initSupabase() {
+            try {
+                if (typeof supabase === 'undefined' || !supabase.createClient) {
+                    console.error('Supabase SDK not loaded properly');
+                    return false;
+                }
+                
+                supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+                console.log('Supabase initialized successfully');
+                return true;
+            } catch (error) {
+                console.error('Error initializing Supabase:', error);
+                return false;
+            }
+        }
+        
+        // Initialize the game
+        function init() {
+            // Initialize Supabase
+            const supabaseReady = initSupabase();
+            
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000022);
+            scene.fog = new THREE.Fog(0x000022, 10, 30);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 3, 10);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            
+            // Create physics world
+            world = new CANNON.World();
+            world.gravity.set(0, -9.82, 0);
+            world.broadphase = new CANNON.NaiveBroadphase();
+            world.solver.iterations = 10;
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 10, 7);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Create floor
+            const floorGeometry = new THREE.PlaneGeometry(30, 30);
+            const floorMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x228844,
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+            
+            // Create physics floor
+            const floorShape = new CANNON.Plane();
+            const floorBody = new CANNON.Body({ mass: 0 });
+            floorBody.addShape(floorShape);
+            floorBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+            world.addBody(floorBody);
+            
+            // Create player ship
+            createShip();
+            
+            // Add event listeners for controls
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+            document.getElementById('restartBtn').addEventListener('click', restartGame);
+            document.getElementById('saveScoreBtn').addEventListener('click', saveScore);
+            
+            // Load high scores if Supabase is ready
+            if (supabaseReady) {
+                loadHighScores();
+            }
+            
+            // Start game loop
+            animate();
+        }
+        
+        // Create player ship
+        function createShip() {
+            // Visual ship
+            const shipGeometry = new THREE.ConeGeometry(0.5, 1.5, 8);
+            const shipMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00aaff,
+                shininess: 100,
+                emissive: 0x0044aa
+            });
+            ship = new THREE.Mesh(shipGeometry, shipMaterial);
+            ship.rotation.x = Math.PI;
+            ship.castShadow = true;
+            scene.add(ship);
+            
+            // Physics body for ship
+            const shipShape = new CANNON.Sphere(0.5);
+            ship.body = new CANNON.Body({ mass: 1 });
+            ship.body.addShape(shipShape);
+            ship.body.position.set(0, 2, 0);
+            world.addBody(ship.body);
+            
+            // Position camera behind ship
+            camera.position.set(0, 3, 10);
+        }
+        
+        // Create a collectible star
+        function createStar() {
+            const starGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+            const starMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xffff00,
+                emissive: 0xffff66,
+                roughness: 0.2,
+                metalness: 0.8
+            });
+            const star = new THREE.Mesh(starGeometry, starMaterial);
+            star.castShadow = true;
+            
+            // Physics body
+            const starShape = new CANNON.Sphere(0.3);
+            star.body = new CANNON.Body({ mass: 0 });
+            star.body.addShape(starShape);
+            
+            // Random position
+            const x = (Math.random() - 0.5) * 20;
+            const z = (Math.random() - 0.5) * 20;
+            star.position.set(x, 2, z);
+            star.body.position.set(x, 2, z);
+            
+            scene.add(star);
+            world.addBody(star.body);
+            stars.push(star);
+            
+            // Add pulsing animation
+            star.userData = { pulseDirection: 1 };
+        }
+        
+        // Create an obstacle
+        function createObstacle() {
+            const obstacleGeometry = new THREE.OctahedronGeometry(0.5);
+            const obstacleMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xff3333,
+                emissive: 0xaa2222,
+                roughness: 0.3,
+                metalness: 0.7
+            });
+            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+            obstacle.castShadow = true;
+            
+            // Physics body
+            const obstacleShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
+            obstacle.body = new CANNON.Body({ mass: 1 });
+            obstacle.body.addShape(obstacleShape);
+            
+            // Random position above the ground
+            const x = (Math.random() - 0.5) * 20;
+            const z = (Math.random() - 0.5) * 20;
+            obstacle.position.set(x, 5, z);
+            obstacle.body.position.set(x, 5, z);
+            
+            // Random rotation
+            obstacle.body.angularVelocity.set(
+                (Math.random() - 0.5) * 4,
+                (Math.random() - 0.5) * 4,
+                (Math.random() - 0.5) * 4
+            );
+            
+            scene.add(obstacle);
+            world.addBody(obstacle.body);
+            obstacles.push(obstacle);
+        }
+        
+        // Handle keydown events
+        function handleKeyDown(event) {
+            switch(event.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    moveForward = true;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    moveBackward = true;
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    moveLeft = true;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    moveRight = true;
+                    break;
+            }
+        }
+        
+        // Handle keyup events
+        function handleKeyUp(event) {
+            switch(event.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    moveForward = false;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    moveBackward = false;
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    moveLeft = false;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    moveRight = false;
+                    break;
+            }
+        }
+        
+        // Update ship movement
+        function updateShipMovement() {
+            const speed = 5;
+            const deltaTime = clock.getDelta();
+            
+            // Apply forces based on key presses
+            if (moveForward) {
+                ship.body.velocity.z -= speed * deltaTime * 20;
+            }
+            if (moveBackward) {
+                ship.body.velocity.z += speed * deltaTime * 20;
+            }
+            if (moveLeft) {
+                ship.body.velocity.x -= speed * deltaTime * 20;
+            }
+            if (moveRight) {
+                ship.body.velocity.x += speed * deltaTime * 20;
+            }
+            
+            // Limit speed
+            const maxSpeed = 10;
+            if (ship.body.velocity.length() > maxSpeed) {
+                ship.body.velocity.normalize();
+                ship.body.velocity.scale(maxSpeed, ship.body.velocity);
+            }
+            
+            // Update visual ship position to match physics body
+            ship.position.copy(ship.body.position);
+            
+            // Rotate ship based on movement
+            if (moveForward) ship.rotation.z = 0.2;
+            else if (moveBackward) ship.rotation.z = -0.2;
+            else ship.rotation.z = 0;
+            
+            if (moveLeft) ship.rotation.x = -0.2;
+            else if (moveRight) ship.rotation.x = 0.2;
+            else if (!moveForward && !moveBackward) ship.rotation.x = 0;
+            
+            // Update camera to follow ship
+            camera.position.x = ship.body.position.x;
+            camera.position.z = ship.body.position.z + 10;
+            camera.lookAt(ship.body.position.x, ship.body.position.y, ship.body.position.z);
+        }
+        
+        // Check collisions
+        function checkCollisions() {
+            // Check star collection
+            for (let i = stars.length - 1; i >= 0; i--) {
+                const star = stars[i];
+                const distance = ship.position.distanceTo(star.position);
+                
+                if (distance < 1) {
+                    // Remove star
+                    scene.remove(star);
+                    world.remove(star.body);
+                    stars.splice(i, 1);
+                    
+                    // Increase score
+                    score += 10;
+                    document.getElementById('score').textContent = `Score: ${score}`;
+                    
+                    // Create new star
+                    createStar();
+                }
+            }
+            
+            // Check obstacle collisions
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
+                const distance = ship.position.distanceTo(obstacle.position);
+                
+                if (distance < 1) {
+                    // Remove obstacle
+                    scene.remove(obstacle);
+                    world.remove(obstacle.body);
+                    obstacles.splice(i, 1);
+                    
+                    // Decrease lives
+                    lives--;
+                    document.getElementById('lives').textContent = `Lives: ${lives}`;
+                    
+                    // Create new obstacle
+                    createObstacle();
+                    
+                    // Check game over
+                    if (lives <= 0) {
+                        gameOver();
+                    }
+                }
+            }
+        }
+        
+        // Game over function
+        function gameOver() {
+            gameActive = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        // Save score to Supabase
+        async function saveScore() {
+            // Check if Supabase is initialized
+            if (!supabaseClient) {
+                console.error('Supabase not initialized');
+                alert('Score saving is not available at the moment.');
+                return;
+            }
+            
+            const playerName = document.getElementById('playerNameInput').value.trim() || 'Anonymous';
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('scores')
+                    .insert([
+                        { player_name: playerName, score: score }
+                    ]);
+                
+                if (error) throw error;
+                
+                // Reload high scores
+                loadHighScores();
+                
+                // Hide save button and input
+                document.getElementById('playerNameInput').style.display = 'none';
+                document.getElementById('saveScoreBtn').style.display = 'none';
+                
+                console.log('Score saved successfully');
+            } catch (error) {
+                console.error('Error saving score:', error);
+                alert('Error saving score. Please try again.');
+            }
+        }
+        
+        // Load high scores from Supabase
+        async function loadHighScores() {
+            // Check if Supabase is initialized
+            if (!supabaseClient) {
+                console.error('Supabase not initialized');
+                return;
+            }
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('scores')
+                    .select('player_name, score')
+                    .order('score', { ascending: false })
+                    .limit(10);
+                
+                if (error) throw error;
+                
+                // Update the high scores display
+                const scoresList = document.getElementById('scoresList');
+                scoresList.innerHTML = '';
+                
+                if (data.length === 0) {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = 'No scores yet!';
+                    scoresList.appendChild(listItem);
+                } else {
+                    data.forEach((entry, index) => {
+                        const listItem = document.createElement('li');
+                        listItem.textContent = `${index + 1}. ${entry.player_name}: ${entry.score}`;
+                        scoresList.appendChild(listItem);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading scores:', error);
+            }
+        }
+        
+        // Restart game
+        function restartGame() {
+            // Reset game state
+            score = 0;
+            lives = 3;
+            gameActive = true;
+            
+            // Update UI
+            document.getElementById('score').textContent = `Score: ${score}`;
+            document.getElementById('lives').textContent = `Lives: ${lives}`;
+            document.getElementById('gameOver').style.display = 'none';
+            
+            // Show save score elements
+            document.getElementById('playerNameInput').style.display = 'inline-block';
+            document.getElementById('saveScoreBtn').style.display = 'inline-block';
+            document.getElementById('playerNameInput').value = '';
+            
+            // Remove existing objects
+            stars.forEach(star => {
+                scene.remove(star);
+                world.remove(star.body);
+            });
+            stars = [];
+            
+            obstacles.forEach(obstacle => {
+                scene.remove(obstacle);
+                world.remove(obstacle.body);
+            });
+            obstacles = [];
+            
+            // Reset ship position
+            ship.body.position.set(0, 2, 0);
+            ship.body.velocity.set(0, 0, 0);
+            
+            // Create initial objects
+            for (let i = 0; i < 5; i++) {
+                createStar();
+                createObstacle();
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (gameActive) {
+                // Update physics
+                world.step(1/60);
+                
+                // Update ship movement
+                updateShipMovement();
+                
+                // Check collisions
+                checkCollisions();
+                
+                // Update star animations
+                stars.forEach(star => {
+                    // Pulsing effect
+                    star.scale.x += 0.01 * star.userData.pulseDirection;
+                    star.scale.y += 0.01 * star.userData.pulseDirection;
+                    star.scale.z += 0.01 * star.userData.pulseDirection;
+                    
+                    if (star.scale.x > 1.2) star.userData.pulseDirection = -1;
+                    if (star.scale.x < 0.8) star.userData.pulseDirection = 1;
+                    
+                    // Rotate stars
+                    star.rotation.x += 0.01;
+                    star.rotation.y += 0.02;
+                });
+                
+                // Move obstacles downward
+                obstacles.forEach(obstacle => {
+                    obstacle.position.copy(obstacle.body.position);
+                    obstacle.rotation.x += 0.02;
+                    obstacle.rotation.y += 0.03;
+                    
+                    // Reset position if too low
+                    if (obstacle.position.y < -5) {
+                        obstacle.body.position.set(
+                            (Math.random() - 0.5) * 20,
+                            10,
+                            (Math.random() - 0.5) * 20
+                        );
+                        obstacle.body.velocity.set(0, -5, 0);
+                    }
+                });
+            }
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Initialize game when page loads
+        window.onload = () => {
+            init();
+            
+            // Create initial stars and obstacles
+            for (let i = 0; i < 5; i++) {
+                createStar();
+                createObstacle();
+            }
+        };
+    </script>
+</body>
+</html>
+</body>
+</html>
