@@ -2,6 +2,14 @@
 
 This project is a playground for experimenting with Qwen3 Coder, featuring a 3D game built with Three.js and Cannon.js that integrates with Supabase for high score tracking.
 
+📹 Full YouTube Guide: [Youtube link](https://www.youtube.com/watch?v=f6sxu7--GDQ&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=16)
+
+🚀 X Post: [X link](https://x.com/ShenSeanChen/status/1948749109894033593)
+
+💻 Launch Full Stack Product: [Github Repo](https://github.com/ShenSeanChen/launch-mvp-stripe-nextjs-supabase)
+
+☕️ Buy me a coffee: [Cafe Latte](https://buy.stripe.com/5kA176bA895ggog4gh)
+
 ## Project Structure
 
 - `3d-game/` - Contains the 3D game implementation
