@@ -10,6 +10,8 @@ This project is a playground for experimenting with Qwen3 Coder, featuring a 3D 
 
 ☕️ Buy me a coffee: [Cafe Latte](https://buy.stripe.com/5kA176bA895ggog4gh)
 
+🤖️ Discord: [Invite link](https://discord.com/invite/TKKPzZheua)
+
 ## Project Structure
 
 - `3d-game/` - Contains the 3D game implementation
